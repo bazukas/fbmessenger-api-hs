@@ -32,7 +32,7 @@ module Web.FBMessenger.API.Bot.Responses
 import           Data.Aeson
 import           Data.Text                       (Text)
 import           GHC.Generics
-import           Servant.Client                  (ServantError (..))
+import           Servant.Client                  (ServantError (..), GenResponse(..))
 import           Web.FBMessenger.API.Bot.JsonExt
 
 
@@ -148,7 +148,5 @@ errorInfo err = (ecode, edata)
 
 -- | Extracts a Send API Error object from the 'ServantError' (when possible).
 extractSendError :: ServantError -> Maybe SendErrorObject
-extractSendError FailureResponse{ responseStatus = _, responseContentType = _
-                                , responseBody = body
-                                } = decode body :: Maybe SendErrorObject
+extractSendError (FailureResponse res) = decode (responseBody res) :: Maybe SendErrorObject
 extractSendError _ = Nothing

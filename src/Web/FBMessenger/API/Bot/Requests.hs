@@ -66,7 +66,6 @@ import           GHC.Generics
 import           Network.HTTP.Client.MultipartFormData
 import           Network.Mime
 --import           Prelude hiding (lookup)
-import           Servant.Client.MultipartFormData (ToMultipartFormData (..))
 import           Web.FBMessenger.API.Bot.JsonExt
 
 
@@ -520,12 +519,6 @@ instance FromJSON (UploadImageMessageRequest Text) where
 --   for a structured message contatining and image uploaded using multipart form data. 
 uploadImageMessageRequest :: Recipient -> FileUpload -> UploadImageMessageRequest FileUpload
 uploadImageMessageRequest = UploadImageMessageRequest
-
-instance ToMultipartFormData (UploadImageMessageRequest FileUpload) where
-  toMultipartFormData req =
-    [ partLBS "recipient" . encode $ uiRecipient req
-    , partLBS "message"   $ encode $ object ["attachment" .= object ["type" .= ("image"::String), "payload" .= object [] ]]
-    , fileUploadToPart "file_data" (uiFileData req) ]
 
 
 -- Helpers

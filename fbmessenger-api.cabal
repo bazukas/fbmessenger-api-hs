@@ -24,22 +24,17 @@ library
                      , Web.FBMessenger.API.Bot.Requests
                      , Web.FBMessenger.API.Bot.WebhookAPI
   other-modules:       Web.FBMessenger.API.Bot.JsonExt
-                     , Servant.Client.MultipartFormData
   build-depends:       base >= 4.7 && < 5
                      -- below this line in alphabetical order
                      , aeson
                      , bytestring
                      , http-client
-                     , servant        >= 0.9 && < 0.10
-                     , servant-client >= 0.9 && < 0.10
+                     , servant        >= 0.13 && < 0.14
+                     , servant-client >= 0.13 && < 0.14
                      , text
                      , mtl
                      , unordered-containers
-                     -- for Servant.Client.MultipartFormData and interaction with it
-                     , http-media
-                     , http-types
                      , mime-types
-                     , string-conversions
                      -- for more direct error responses manipulation
                      , case-insensitive
   default-language:    Haskell2010
@@ -55,8 +50,8 @@ executable example
                     ,  http-client-tls
                     ,  fbmessenger-api
                     ,  monad-logger
-                    ,  servant        >= 0.9 && < 0.10
-                    ,  servant-server >= 0.9 && < 0.10
+                    ,  servant        >= 0.13 && < 0.14
+                    ,  servant-server >= 0.13 && < 0.14
                     ,  stm
                     ,  text
                     ,  mtl
