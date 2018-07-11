@@ -68,7 +68,7 @@ server verifyTokenStored pageTokenStored =
       -- (we know that this is successful when only one argument is not Nothing)
       let (Just rcpt) = recipient (Just rcptId) Nothing
       -- prepare the Send API request body
-      let messageReq = sendTextMessageRequest Nothing rcpt text
+      let messageReq = sendTextMessageRequest Nothing rcpt text Nothing
       -- finally send the message request using the tls http connection manager
       logRsp <- sendTextMessage (Just token) messageReq m
       -- restructure the response to get a decent log out of it

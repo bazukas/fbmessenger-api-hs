@@ -1,12 +1,12 @@
 -- |
--- Module      : Web.FBMessenger.API.Bot.Requests 
+-- Module      : Web.FBMessenger.API.Bot.Requests
 -- License     : BSD3
 -- Maintainer  : Marcello Seri <marcello.seri@gmail.com>
 -- Stability   : experimental
 -- Portability : unknown
 --
 -- This module contains types and helpers to build requests to the
--- <https://developers.facebook.com/docs/messenger-platform/ Messenger Platform API> 
+-- <https://developers.facebook.com/docs/messenger-platform/ Messenger Platform API>
 -- to use with 'Web.FBMessenger.API.Bot.SendAPI'.
 --
 {-# LANGUAGE DataKinds                  #-}
@@ -18,7 +18,7 @@
 
 {-# OPTIONS_GHC -fno-warn-unused-binds  #-}
 
-module Web.FBMessenger.API.Bot.Requests 
+module Web.FBMessenger.API.Bot.Requests
     ( -- * Types
       Button                       (..)
     , BubbleElement                (..)
@@ -27,6 +27,7 @@ module Web.FBMessenger.API.Bot.Requests
     , NotificationType             (..)
     , PaymentSummary               (..)
     , PaymentAdjustment            (..)
+    , QuickReply                   (..)
     , Recipient                    (..)
     , ReceiptItem                  (..)
     , ShippingAddress              (..)
@@ -70,7 +71,7 @@ import           Web.FBMessenger.API.Bot.JsonExt
 
 
 -- | Informations about the recipient of the message
-data Recipient = Recipient 
+data Recipient = Recipient
   { recipient_id           :: Maybe Text  -- ^ ID of recipient
   , recipient_phone_number :: Maybe Text  -- ^ Phone number of the recipient with the format +1(212)555-2368
   } deriving (Eq, Show, Generic)
@@ -82,11 +83,11 @@ instance FromJSON Recipient where
     parseJSON = parseJsonDrop 10
 
 -- | Take reciptient id (optional) or phone_number (optional) and return a 'Maybe Recipient' object.
---   Return Nothing when values are either both (Just _) or both Nothing.  
+--   Return Nothing when values are either both (Just _) or both Nothing.
 recipient :: Maybe Text -> Maybe Text -> Maybe Recipient
 recipient Nothing Nothing   = Nothing
 recipient (Just _) (Just _) = Nothing
-recipient rid phone_number  = pure $ Recipient rid phone_number 
+recipient rid phone_number  = pure $ Recipient rid phone_number
 
 
 -- | Push notification type for the message
@@ -107,32 +108,62 @@ instance FromJSON NotificationType where
   parseJSON _             = fail "Failed to parse NotificationType"
 
 
+-- | Quick replies to be sent along with message
+data QuickReply = TextQuickReply Text Text (Maybe Text) -- ^ Quick reply title, payload and optional image url
+                | LocationQuickReply                    -- ^ Request to share user location
+                | PhoneQuickReply                       -- ^ Request to share user phone number
+                | EmailQuickReply                       -- ^ Request to share user email
+                deriving (Eq, Show)
+
+instance ToJSON QuickReply where
+  toJSON (TextQuickReply title payload image_url) = object [ "content_type" .= ("text" :: Text)
+                                                           , "title" .= title
+                                                           , "payload" .= payload
+                                                           , "image_url" .= image_url
+                                                           ]
+  toJSON LocationQuickReply = object [ "content_type" .= ("location" :: Text) ]
+  toJSON PhoneQuickReply = object [ "content_type" .= ("user_phone_number" :: Text) ]
+  toJSON EmailQuickReply = object [ "content_type" .= ("user_email" :: Text) ]
+
+instance FromJSON QuickReply where
+  parseJSON = withObject "quick reply" $ \o -> do
+    t <- o .: "content_type"
+    case t of
+      (String "text") -> TextQuickReply <$> o .: "title" <*> o .: "payload" <*> o .:? "image_url"
+      (String "location") -> pure LocationQuickReply
+      (String "user_phone_number") -> pure PhoneQuickReply
+      (String "user_email") -> pure EmailQuickReply
+      _ -> fail "unknown quick reply content_type"
+
+
 -- | This object represents a text message request
 --   The message text must be UTF-8, with 320 character limit
 data SendTextMessageRequest = SendTextMessageRequest
   { mRecipient        :: Recipient
   , mText             :: Text
   , mNotificationType :: Maybe NotificationType
+  , mQuickReplies     :: Maybe [QuickReply]
   } deriving (Eq, Show, Generic)
 
 instance ToJSON SendTextMessageRequest where
-  toJSON SendTextMessageRequest{..} = omitNulls [ "recipient" .= mRecipient, "message" .= tw, "notification_type" .= mNotificationType ]
-     where tw = object [ "text" .= mText ]
-  
+  toJSON SendTextMessageRequest{..} = omitNulls [ "recipient" .= mRecipient, "message" .= msg, "notification_type" .= mNotificationType ]
+    where msg = object [ "text" .= mText, "quick_replies" .= mQuickReplies ]
+
 instance FromJSON SendTextMessageRequest where
   parseJSON = withObject "send text message" $ \o ->
-    let t = o .: "message" >>= (.: "text") in 
-      SendTextMessageRequest <$> o .: "recipient" <*> t <*> o .:? "notification_type"
-    
--- | Take a notification type (optional), a recipient and a text. 
---   Return a 'SendTextMessageRequest'. 
+    let t = o .: "message" >>= (.: "text")
+        qr = o .: "message" >>= (.:? "quick_replies") in
+      SendTextMessageRequest <$> o .: "recipient" <*> t <*> o .:? "notification_type" <*> qr
+
+-- | Take a notification type (optional), a recipient, text and optional list of quick replies.
+--   Return a 'SendTextMessageRequest'.
 --   Raise an error if the text is longer than 320 characters.
-sendTextMessageRequest :: Maybe NotificationType -> Recipient -> Text -> SendTextMessageRequest
-sendTextMessageRequest notificationType recipient text 
-  | T.length text <= 320 = SendTextMessageRequest recipient text notificationType
+sendTextMessageRequest :: Maybe NotificationType -> Recipient -> Text -> Maybe [QuickReply] -> SendTextMessageRequest
+sendTextMessageRequest notificationType recipient text quickReplies
+  | T.length text <= 320 = SendTextMessageRequest recipient text notificationType quickReplies
   | otherwise            = error "message text too long: the text must be UTF-8, with 320 character limit"
-      
-  
+
+
 -- | Payload of attachment for structured messages.
 --
 --   Although not enforced in any way by this wrapper, the following generic limits are in place
@@ -143,19 +174,19 @@ sendTextMessageRequest notificationType recipient text
 --       Call-to-action title: 20 characters
 --       Call-to-action items: 3 buttons
 --       Bubbles per message (horizontal scroll): 10 elements
---       
+--
 --       Image ratio is 1.91:1
 --
- 
-data ImagePayload = ImagePayload 
-    { imgUrl :: Text                                -- ^ Image url 
+
+data ImagePayload = ImagePayload
+    { imgUrl :: Text                                -- ^ Image url
     } deriving (Eq, Show)
 
 parseImagePayload :: Object -> Parser ImagePayload
-parseImagePayload v = ImagePayload <$> v.: "url"     
- 
-data GenericTemplate = GenericTemplate 
-    { genElements       :: [BubbleElement]           -- ^ Data for each bubble in message 
+parseImagePayload v = ImagePayload <$> v.: "url"
+
+data GenericTemplate = GenericTemplate
+    { genElements       :: [BubbleElement]           -- ^ Data for each bubble in message
     } deriving (Eq, Show)
 
 parseGenericTemplate :: Object -> Parser GenericTemplate
@@ -167,16 +198,16 @@ data ButtonTemplate = ButtonTemplate
     } deriving (Eq, Show)
 
 parseButtonTemplate :: Object -> Parser ButtonTemplate
-parseButtonTemplate v = ButtonTemplate <$> v .: "text" <*> v .: "buttons" 
+parseButtonTemplate v = ButtonTemplate <$> v .: "text" <*> v .: "buttons"
 
-data ReceiptTemplate = ReceiptTemplate 
+data ReceiptTemplate = ReceiptTemplate
     { rcpRecipientName   :: Text                      -- ^ Recipient's Name
     , rcpOrderNumber     :: Text                      -- ^ Order number. Must be unique
     , rcpCurrency        :: Text                      -- ^ Currency for order
     , rcpPaymentMethod   :: Text                      -- ^ Payment method details. You may insert an arbitrary string but it is recommended to provide enough information for the person to decipher which payment method and account they used number)
     , rcpTimestamp       :: Maybe Text                -- ^ Timestamp of order
     , rcpOrderUrl        :: Maybe Text                -- ^ URL of order
-    , rcpElements        :: [ReceiptItem]             -- ^ Items in order       
+    , rcpElements        :: [ReceiptItem]             -- ^ Items in order
     , rcpAddress         :: Maybe ShippingAddress     -- ^ Shipping address. If you do not ship an item, you may omit the field
     , rcpSummary         :: PaymentSummary            -- ^ Payment summary
     , rcpAdjustments     :: Maybe [PaymentAdjustment] -- ^ Payment adjustments. Allow a way to insert adjusted pricing (e.g., sales)
@@ -192,23 +223,23 @@ parseReceiptTemplate v = ReceiptTemplate <$> v .: "recipient_name"
                                          <*> v .: "elements"
                                          <*> v .:? "address"
                                          <*> v .: "summary"
-                                         <*> v .:? "adjustments" 
+                                         <*> v .:? "adjustments"
 
 instance ToJSON ImagePayload where
     toJSON ImagePayload{..} = object [ "url" .= imgUrl ]
 instance FromJSON ImagePayload where
     parseJSON = withObject "image payload" $ \v -> parseImagePayload v
-    
+
 instance ToJSON GenericTemplate where
     toJSON GenericTemplate{..} = object [ "template_type" .= ("generic"::String), "elements" .= genElements ]
 instance FromJSON GenericTemplate where
     parseJSON = withObject "generic template payload" $ \v -> parseGenericTemplate v
-    
+
 instance ToJSON ButtonTemplate where
     toJSON ButtonTemplate{..} = object [ "template_type" .= ("button"::String), "text" .= btnText, "buttons" .= btnButtons ]
 instance FromJSON ButtonTemplate where
     parseJSON = withObject "button template payload" $ \v -> parseButtonTemplate v
-    
+
 instance ToJSON ReceiptTemplate where
     toJSON ReceiptTemplate{..} = omitNulls [ "template_type"  .= ("receipt"::String)
                                            , "recipient_name" .= rcpRecipientName
@@ -224,14 +255,14 @@ instance ToJSON ReceiptTemplate where
 instance FromJSON ReceiptTemplate where
     parseJSON = withObject "receipt template payload" $ \v -> parseReceiptTemplate v
 
-data AttachmentWrapper = ItImage ImagePayload 
-                       | ItGeneric GenericTemplate 
-                       | ItButton ButtonTemplate 
+data AttachmentWrapper = ItImage ImagePayload
+                       | ItGeneric GenericTemplate
+                       | ItButton ButtonTemplate
                        | ItReceipt ReceiptTemplate deriving (Eq, Show)
 
 instance ToJSON AttachmentWrapper where
     toJSON aw = object [ "type" .= t, "payload" .= p ]
-      where 
+      where
         (t, p) = case aw of
                     ItImage a    -> ("image":: String,    toJSON a)
                     ItGeneric a  -> ("template":: String, toJSON a)
@@ -240,17 +271,17 @@ instance ToJSON AttachmentWrapper where
 instance FromJSON AttachmentWrapper where
     parseJSON = withObject "attachment wrapper" $ \o -> do
       type_   <- (o .: "type") :: Parser String
-      payload <- o .: "payload" 
+      payload <- o .: "payload"
       case type_ of
         "image"    -> ItImage <$> parseImagePayload payload
         "template" -> do
           templateType <- (o .: "payload" >>= (.: "template_type")) :: Parser String
           case templateType of
             "generic" -> ItGeneric <$> parseGenericTemplate payload
-            "button"  -> ItButton  <$> parseButtonTemplate payload 
+            "button"  -> ItButton  <$> parseButtonTemplate payload
             "receipt" -> ItReceipt <$> parseReceiptTemplate payload
             _ -> fail "impossible to parse the template type"
-        _  -> fail "impossible to parse the attachment wrapper type" 
+        _  -> fail "impossible to parse the attachment wrapper type"
 
 
 -- | Type for 'Button' objects. See 'Button' type for additional informations.
@@ -266,7 +297,7 @@ instance FromJSON ButtonType where
   parseJSON _          = fail "Failed to parse ButtonType"
 
 -- | 'Button' object for structured messages payloads
-data Button = Button 
+data Button = Button
   { btn_type    :: ButtonType   -- ^ Value is "web_url" or "postback"
   , btn_title   :: Text         -- ^ Button title
   , btn_url     :: Maybe Text   -- ^ For web_url buttons, this URL is opened in a mobile browser when the button is tapped. Required if type is "web_url"
@@ -277,14 +308,14 @@ instance ToJSON Button where
     toJSON = toJsonDrop 4
 instance FromJSON Button where
   parseJSON = parseJsonDrop 4
-  
+
 -- | Take the button title and the button url (this URL is opened in a mobile browser when the button is tapped)
 --   and return a "web_url" button
 webUrlButton :: Text -> Text -> Button
 webUrlButton title url = Button WebUrl title (Just url) Nothing
 
 -- | Take the button title and the button payload (this data will be sent back to you via webhook)
---   and return a "postback" button  
+--   and return a "postback" button
 postbackButton :: Text -> Text -> Button
 postbackButton title payload = Button Postback title Nothing (Just payload)
 
@@ -307,7 +338,7 @@ instance FromJSON BubbleElement where
 bubbleElement :: Text -> BubbleElement
 bubbleElement title = BubbleElement title Nothing Nothing Nothing Nothing
 
-data ReceiptItem = ReceiptItem 
+data ReceiptItem = ReceiptItem
   { re_title     :: Text         -- ^ Title of item
   , re_subtitle  :: Maybe Text   -- ^ Subtitle of item
   , re_quantity  :: Maybe Int    -- ^ Quantity of item
@@ -319,13 +350,13 @@ data ReceiptItem = ReceiptItem
 instance ToJSON ReceiptItem where
   toJSON = toJsonDrop 3
 instance FromJSON ReceiptItem where
-  parseJSON = parseJsonDrop 3 
+  parseJSON = parseJsonDrop 3
 
 receiptItem :: Text -> ReceiptItem
-receiptItem title = ReceiptItem title Nothing Nothing Nothing Nothing Nothing 
+receiptItem title = ReceiptItem title Nothing Nothing Nothing Nothing Nothing
 
 -- | Shipping address object for Receipt Template messages
-data ShippingAddress = ShippingAddress 
+data ShippingAddress = ShippingAddress
   { sa_street_1    :: Text       -- ^ Street Address, line 1
   , sa_street_2    :: Maybe Text -- ^ Street Address, line 2
   , sa_city        :: Text       -- ^ City
@@ -340,10 +371,10 @@ instance FromJSON ShippingAddress where
   parseJSON = parseJsonDrop 3
 
 shippingAddress :: Text -> Text -> Text -> Text -> Text -> ShippingAddress
-shippingAddress street city postalCode state country = ShippingAddress street Nothing city postalCode state country 
+shippingAddress street city postalCode state country = ShippingAddress street Nothing city postalCode state country
 
 -- | Payment summary object for Receipt Template messages
-data PaymentSummary = PaymentSummary 
+data PaymentSummary = PaymentSummary
   { ps_subtotal      :: Maybe Double  -- ^ Subtotal
   , ps_shipping_cost :: Maybe Double  -- ^ Shipping Cost
   , ps_total_tax     :: Maybe Double  -- ^ Total Tax
@@ -354,7 +385,7 @@ instance ToJSON PaymentSummary where
   toJSON = toJsonDrop 3
 instance FromJSON PaymentSummary where
   parseJSON = parseJsonDrop 3
-  
+
 paymentSummary :: Double -> PaymentSummary
 paymentSummary totalCost = PaymentSummary Nothing Nothing Nothing totalCost
 
@@ -364,7 +395,7 @@ data PaymentAdjustment = PaymentAdjustment
   } deriving (Eq, Show, Generic)
 
 instance ToJSON PaymentAdjustment where
-  toJSON = toJsonDrop 3  
+  toJSON = toJsonDrop 3
 instance FromJSON PaymentAdjustment where
   parseJSON = parseJsonDrop 3
 
@@ -372,62 +403,62 @@ instance FromJSON PaymentAdjustment where
 -- | This object represents a structured message request
 data SendStructuredMessageRequest = SendStructuredMessageRequest
   { smRecipient         :: Recipient
-  , smAttachment        :: AttachmentWrapper         
+  , smAttachment        :: AttachmentWrapper
   , smNotificationType  :: Maybe NotificationType
   } deriving (Eq, Show)
 
 instance ToJSON SendStructuredMessageRequest where
   toJSON SendStructuredMessageRequest{..} = omitNulls [ "recipient" .= smRecipient, "message" .= tw, "notification_type" .= smNotificationType ]
      where tw = object [ "attachment" .= smAttachment ]
-  
+
 instance FromJSON SendStructuredMessageRequest where
   parseJSON = withObject "send structured message" $ \o ->
-    let aw = o .: "message" >>= (.: "attachment") in 
+    let aw = o .: "message" >>= (.: "attachment") in
       SendStructuredMessageRequest <$> o .: "recipient" <*> aw <*> o .:? "notification_type"
- 
+
 -- | Take a notification type (optional), a recipient, an image url.
 --   Return a 'SendStructuredMessageRequest' for a structured message with image attachment
 sendImageMessageRequest :: Maybe NotificationType -> Recipient -> Text -> SendStructuredMessageRequest
-sendImageMessageRequest notificationType recipient imgUrl = 
+sendImageMessageRequest notificationType recipient imgUrl =
   SendStructuredMessageRequest recipient attachment notificationType
   where attachment = ItImage $ ImagePayload imgUrl
 
 -- | Take a notification type (optional), a recipient, a list of 'ButtonElement'.
 --   Return a 'SendStructuredMessageRequest' for a structured message with generic template
 sendGenericTemplateMessageRequest :: Maybe NotificationType -> Recipient -> [BubbleElement]  -> SendStructuredMessageRequest
-sendGenericTemplateMessageRequest notificationType recipient bubbles = 
+sendGenericTemplateMessageRequest notificationType recipient bubbles =
   SendStructuredMessageRequest recipient attachment notificationType
-  where attachment = ItGeneric $ GenericTemplate bubbles 
+  where attachment = ItGeneric $ GenericTemplate bubbles
 
--- | Take a notification type (optional), a recipient, the text of the message and a list of 
+-- | Take a notification type (optional), a recipient, the text of the message and a list of
 --   buttons (they will appear as call-to-actions).
 --   Return a 'SendStructuredMessageRequest' for a structured message with button template
 sendButtonTemplateMessageRequest :: Maybe NotificationType -> Recipient -> Text -> [Button]  -> SendStructuredMessageRequest
-sendButtonTemplateMessageRequest notificationType recipient text buttons = 
+sendButtonTemplateMessageRequest notificationType recipient text buttons =
   SendStructuredMessageRequest recipient attachment notificationType
   where attachment = ItButton $ ButtonTemplate text buttons
 
 -- | Take a notification type (optional), a recipient and all the informations needed to construct a 'ReceiptTemplate' object.
---   Namely: the recipient name, the order number (must be unique), the currency, the payment method, the timestamp (optional), 
---   the order url (optional), a list with the receipt items, the shipping address (optional), the payment summary and, 
+--   Namely: the recipient name, the order number (must be unique), the currency, the payment method, the timestamp (optional),
+--   the order url (optional), a list with the receipt items, the shipping address (optional), the payment summary and,
 --   finally, a list of payment adjustments (optional).
 --   Return a 'SendStructuredMessageRequest' for a structured message with receipt template
 sendReceiptTemplateMessageRequest :: Maybe NotificationType -> Recipient -> Text -> Text -> Text -> Text -> Maybe Text
                                            -> Maybe Text -> [ReceiptItem] -> Maybe ShippingAddress -> PaymentSummary -> Maybe [PaymentAdjustment]
                                            -> SendStructuredMessageRequest
-sendReceiptTemplateMessageRequest notificationType recipient 
-  recipientName orderNumber currency paymentMethod timeStamp orderUrl items address summary adjustments = 
+sendReceiptTemplateMessageRequest notificationType recipient
+  recipientName orderNumber currency paymentMethod timeStamp orderUrl items address summary adjustments =
     SendStructuredMessageRequest recipient attachment notificationType
-    where 
+    where
         attachment = ItReceipt $ ReceiptTemplate recipientName orderNumber currency paymentMethod timeStamp orderUrl items address summary adjustments
 
 -- | This object represents a Welcome Message (FromJSON is disabled for it)
-data WelcomeMessageRequest = 
-    WelcomeTextMessage        { wtmMessage :: Text } 
-  | WelcomeStructuredMessage  { wsmMessage :: AttachmentWrapper } 
+data WelcomeMessageRequest =
+    WelcomeTextMessage        { wtmMessage :: Text }
+  | WelcomeStructuredMessage  { wsmMessage :: AttachmentWrapper }
   | WelcomeEmptyMessage
   deriving (Eq, Show, Generic)
-  
+
 instance ToJSON WelcomeMessageRequest where
   toJSON mw = object [ "setting_type" .= ("call_to_actions"::String), "thread_state" .= ("new_thread"::String), "call_to_actions" .= at ]
     where at = case mw of
@@ -436,23 +467,23 @@ instance ToJSON WelcomeMessageRequest where
                   WelcomeEmptyMessage -> [ ]
 
 --instance FromJSON WelcomeMessage where
---  parseJSON = parseJsonDrop 4 
+--  parseJSON = parseJsonDrop 4
 
 -- | Take a text. Return a WelcomeMessageRequest
 setWelcomeTextMessageRequest :: Text -> WelcomeMessageRequest
-setWelcomeTextMessageRequest = WelcomeTextMessage 
+setWelcomeTextMessageRequest = WelcomeTextMessage
 
 -- | Take an image url.
 --   Return a 'WelcomeMessageRequest' for a structured message with image attachment
 setWelcomeImageMessageRequest :: Text -> WelcomeMessageRequest
 setWelcomeImageMessageRequest imgUrl = WelcomeStructuredMessage attachment
-  where attachment = ItImage $ ImagePayload imgUrl 
+  where attachment = ItImage $ ImagePayload imgUrl
 
 -- | Take a list of ButtonElement.
 --   Return a 'WelcomeMessageRequest' for a structured message with generic template
 setWelcomeGenericTemplateMessageRequest :: [BubbleElement]  -> WelcomeMessageRequest
 setWelcomeGenericTemplateMessageRequest bubbles = WelcomeStructuredMessage attachment
-  where attachment = ItGeneric $ GenericTemplate bubbles 
+  where attachment = ItGeneric $ GenericTemplate bubbles
 
 -- | Take the text of the message and a list of buttons (they will appear as call-to-actions).
 --   Return a 'WelcomeMessageRequest' for a structured message with button template
@@ -476,7 +507,7 @@ data FileUpload = FileUpload
   , fileUpload_content :: FileUploadContent -- ^ The payload/source to upload.
   }
 
--- | Return a 'FileUpload' from a given 'FilePath'. 
+-- | Return a 'FileUpload' from a given 'FilePath'.
 --   At the moment, only png and jpg images are supported by the API.
 localFileUpload :: FilePath -> FileUpload
 localFileUpload path = FileUpload
@@ -515,8 +546,8 @@ instance FromJSON (UploadImageMessageRequest Text) where
 -- sendImageMessageRequest :: Recipient -> Text -> UploadImageMessageRequest Text
 -- sendImageMessageRequest reciptient image = UploadImageMessageRequest recipient image emptyImageMessageAttachment
 
--- | Take a 'Recipient' and 'FileUpload' (relative to a jpg or png). Return a ('UploadImageMessageRequest FileUpload') 
---   for a structured message contatining and image uploaded using multipart form data. 
+-- | Take a 'Recipient' and 'FileUpload' (relative to a jpg or png). Return a ('UploadImageMessageRequest FileUpload')
+--   for a structured message contatining and image uploaded using multipart form data.
 uploadImageMessageRequest :: Recipient -> FileUpload -> UploadImageMessageRequest FileUpload
 uploadImageMessageRequest = UploadImageMessageRequest
 
