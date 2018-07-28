@@ -24,7 +24,7 @@ module Web.FBMessenger.API.Bot.Responses
   , SubscriptionResponse   (..)
   , UserProfileResponse    (..)
   , WelcomeMessageResponse (..)
-  , GetStartedResponse
+  , MessengerProfileResponse
   -- * Functions
   , errorInfo
   , extractSendError
@@ -85,11 +85,11 @@ instance ToJSON WelcomeMessageResponse where
 instance FromJSON WelcomeMessageResponse where
   parseJSON = parseJsonDrop 4
 
-newtype GetStartedResponse = GetStartedResponse { gsResult :: Text } deriving (Eq, Show)
+newtype MessengerProfileResponse = MessengerProfileResponse { mpResult :: Text } deriving (Eq, Show)
 
-instance FromJSON GetStartedResponse where
+instance FromJSON MessengerProfileResponse where
     parseJSON = withObject "response" $ \o ->
-        GetStartedResponse <$> o .: "result"
+        MessengerProfileResponse <$> o .: "result"
 
 -- | Send API Error response object (see: https://developers.facebook.com/docs/messenger-platform/send-api-reference#errors)
 --

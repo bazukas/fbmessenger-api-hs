@@ -36,6 +36,7 @@ module Web.FBMessenger.API.Bot.Requests
     , UploadImageMessageRequest    (..)
     , WelcomeMessageRequest        (..)
     , GetStartedRequest            (..)
+    , GreetingTextRequest          (..)
     -- * Functions
     , bubbleElement
     , localFileUpload
@@ -53,6 +54,7 @@ module Web.FBMessenger.API.Bot.Requests
     -- , setWelcomeGenericTemplateMessageRequest
     -- , setWelcomeImageMessageRequest
     -- , setWelcomeTextMessageRequest
+    , setDefaultLocaleGreetingRequest
     , uploadImageMessageRequest
     , webUrlButton
 ) where
@@ -498,6 +500,24 @@ newtype GetStartedRequest = GetStartedRequest Text
 
 instance ToJSON GetStartedRequest where
     toJSON (GetStartedRequest payload) = object [ "get_started" .= object [ "payload" .= payload ] ]
+
+
+data Greeting = Greeting
+    { greetingLocale :: Text
+    , greetingText :: Text
+    } deriving (Eq, Show)
+
+instance ToJSON Greeting where
+    toJSON (Greeting l t) = object [ "locale" .= l, "text" .= t ]
+
+newtype GreetingTextRequest = GreetingTextRequest [ Greeting ]
+    deriving (Eq, Show)
+
+instance ToJSON GreetingTextRequest where
+    toJSON (GreetingTextRequest gs) = object [ "greeting" .= gs ]
+
+setDefaultLocaleGreetingRequest :: Text -> GreetingTextRequest
+setDefaultLocaleGreetingRequest t = GreetingTextRequest [ Greeting "default" t ]
 
 
 -- The code below is partially from https://github.com/klappvisor/haskell-telegram-api/blob/master/src/Web/Telegram/API/Bot/Requests.hs

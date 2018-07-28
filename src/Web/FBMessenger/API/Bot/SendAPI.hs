@@ -21,6 +21,7 @@ module Web.FBMessenger.API.Bot.SendAPI
   , sendTextMessage
   , sendStructuredMessage
   , setGetStartedButton
+  , setGreetingText
   , setWelcomeMessage
   , subscribedApps
   {-, uploadImageMessage-}
@@ -79,7 +80,10 @@ type FBMessengerSendAPI =
          :> Get '[JSON] UserProfileResponse
     :<|> GraphAPIAccessToken :> "me" :> "messenger_profile"
          :> ReqBody '[JSON] GetStartedRequest
-         :> Post '[JSON] GetStartedResponse
+         :> Post '[JSON] MessengerProfileResponse
+    :<|> GraphAPIAccessToken :> "me" :> "messenger_profile"
+         :> ReqBody '[JSON] GreetingTextRequest
+         :> Post '[JSON] MessengerProfileResponse
 
 
 -- | Proxy for Messenger Platform Bot Send
@@ -94,7 +98,8 @@ subscribedApps_        ::                                         Maybe Token ->
 welcomeMessage_        ::        Maybe Token -> Text -> WelcomeMessageRequest -> ClientM WelcomeMessageResponse
 deleteWMessage_        ::        Maybe Token -> Text -> WelcomeMessageRequest -> ClientM WelcomeMessageResponse
 userProfile_           ::                   Maybe Token -> Maybe Text -> Text -> ClientM UserProfileResponse
-getStarted_            ::                    Maybe Token -> GetStartedRequest -> ClientM GetStartedResponse
+getStarted_            ::                    Maybe Token -> GetStartedRequest -> ClientM MessengerProfileResponse
+greetingText_          ::                  Maybe Token -> GreetingTextRequest -> ClientM MessengerProfileResponse
 
 sendTextMessage_
   {-:<|> uploadImageMessage_-}
@@ -103,7 +108,8 @@ sendTextMessage_
   :<|> welcomeMessage_
   :<|> deleteWMessage_
   :<|> userProfile_
-  :<|> getStarted_ = client api
+  :<|> getStarted_
+  :<|> greetingText_ = client api
 
 
 -- | Send text messages. On success, minor informations on the sent message are returned.
@@ -159,9 +165,16 @@ getUserProfileInfo token userId manager =
 -- | Set a get started button
 --   Return a simple object containing a string indicating if the get started button
 --   is correctly registered.
-setGetStartedButton :: Maybe Token -> GetStartedRequest -> Manager -> IO (Either ServantError GetStartedResponse)
+setGetStartedButton :: Maybe Token -> GetStartedRequest -> Manager -> IO (Either ServantError MessengerProfileResponse)
 setGetStartedButton token req manager =
     runClientM (getStarted_ token req) (ClientEnv manager graphAPIBaseUrl Nothing)
+
+-- | Set a get started button
+--   Return a simple object containing a string indicating if the get started button
+--   is correctly registered.
+setGreetingText :: Maybe Token -> GreetingTextRequest -> Manager -> IO (Either ServantError MessengerProfileResponse)
+setGreetingText token req manager =
+    runClientM (greetingText_ token req) (ClientEnv manager graphAPIBaseUrl Nothing)
 
 
 -- Helpers (not exported)
