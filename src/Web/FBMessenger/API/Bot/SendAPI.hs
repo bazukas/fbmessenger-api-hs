@@ -20,6 +20,7 @@ module Web.FBMessenger.API.Bot.SendAPI
   , removeWelcomeMessage
   , sendTextMessage
   , sendStructuredMessage
+  , setGetStartedButton
   , setWelcomeMessage
   , subscribedApps
   {-, uploadImageMessage-}
@@ -76,6 +77,9 @@ type FBMessengerSendAPI =
          :> Delete '[JSON] WelcomeMessageResponse
     :<|> GraphAPIAccessToken :> QueryParam "fields" Text :> Capture "user_id" Text
          :> Get '[JSON] UserProfileResponse
+    :<|> GraphAPIAccessToken :> "me" :> "messenger_profile"
+         :> ReqBody '[JSON] GetStartedRequest
+         :> Post '[JSON] GetStartedResponse
 
 
 -- | Proxy for Messenger Platform Bot Send
@@ -90,6 +94,7 @@ subscribedApps_        ::                                         Maybe Token ->
 welcomeMessage_        ::        Maybe Token -> Text -> WelcomeMessageRequest -> ClientM WelcomeMessageResponse
 deleteWMessage_        ::        Maybe Token -> Text -> WelcomeMessageRequest -> ClientM WelcomeMessageResponse
 userProfile_           ::                   Maybe Token -> Maybe Text -> Text -> ClientM UserProfileResponse
+getStarted_            ::                    Maybe Token -> GetStartedRequest -> ClientM GetStartedResponse
 
 sendTextMessage_
   {-:<|> uploadImageMessage_-}
@@ -97,7 +102,8 @@ sendTextMessage_
   :<|> subscribedApps_
   :<|> welcomeMessage_
   :<|> deleteWMessage_
-  :<|> userProfile_ = client api
+  :<|> userProfile_
+  :<|> getStarted_ = client api
 
 
 -- | Send text messages. On success, minor informations on the sent message are returned.
@@ -149,6 +155,13 @@ removeWelcomeMessage token pageId manager =
 getUserProfileInfo :: Maybe Token -> Text -> Manager -> IO (Either ServantError UserProfileResponse)
 getUserProfileInfo token userId manager =
     runClientM (userProfile_ token userProfileFields userId) (ClientEnv manager graphAPIBaseUrl Nothing)
+
+-- | Set a get started button
+--   Return a simple object containing a string indicating if the get started button
+--   is correctly registered.
+setGetStartedButton :: Maybe Token -> GetStartedRequest -> Manager -> IO (Either ServantError GetStartedResponse)
+setGetStartedButton token req manager =
+    runClientM (getStarted_ token req) (ClientEnv manager graphAPIBaseUrl Nothing)
 
 
 -- Helpers (not exported)

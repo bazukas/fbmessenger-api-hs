@@ -35,6 +35,7 @@ module Web.FBMessenger.API.Bot.Requests
     , SendStructuredMessageRequest (..)
     , UploadImageMessageRequest    (..)
     , WelcomeMessageRequest        (..)
+    , GetStartedRequest            (..)
     -- * Functions
     , bubbleElement
     , localFileUpload
@@ -490,6 +491,13 @@ setWelcomeGenericTemplateMessageRequest bubbles = WelcomeStructuredMessage attac
 setWelcomeButtonTemplateMessageRequest :: Text -> [Button]  -> WelcomeMessageRequest
 setWelcomeButtonTemplateMessageRequest text buttons = WelcomeStructuredMessage attachment
   where attachment = ItButton $ ButtonTemplate text buttons
+
+
+newtype GetStartedRequest = GetStartedRequest Text
+    deriving (Eq, Show)
+
+instance ToJSON GetStartedRequest where
+    toJSON (GetStartedRequest payload) = object [ "get_started" .= object [ "payload" .= payload ] ]
 
 
 -- The code below is partially from https://github.com/klappvisor/haskell-telegram-api/blob/master/src/Web/Telegram/API/Bot/Requests.hs
